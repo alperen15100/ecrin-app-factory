@@ -28,7 +28,7 @@ request = " ".join(args.request.split())
 name = safe_name(args.name)
 pkg = args.package.strip()
 
-if not re.fullmatch(r"[A-Za-z_]\\w*(\\.[A-Za-z_]\\w*){2,}", pkg):
+if not re.fullmatch(r"[A-Za-z_]\w*(\.[A-Za-z_]\w*){2,}", pkg):
     raise SystemExit("Invalid Android package name: " + pkg)
 
 recipe = recipe_for(request)
