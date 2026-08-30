@@ -1,0 +1,132 @@
+name: Ecrin App Factory V4 Agentic
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_request:
+        description: "Describe the Android app you want"
+        required: true
+        default: "Build a premium offline Android app that scans receipts with OCR and exports results to CSV."
+      app_name:
+        description: "App name"
+        required: true
+        default: "EcrinApp"
+      package_name:
+        description: "Android package name"
+        required: true
+        default: "com.ecrinlabs.generatedapp"
+
+permissions:
+  contents: read
+
+jobs:
+  agentic-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout factory
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Prepare AAS Core for Codex
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/codex-home" "$RUNNER_TEMP/aas-cache" factory-output
+          touch "$RUNNER_TEMP/codex-home/config.toml"
+
+          npm exec --yes --ignore-scripts --package=agentic-awesome-skills@16.4.0 -- \
+            aas mcp configure \
+            --host codex \
+            --scope user \
+            --config "$RUNNER_TEMP/codex-home/config.toml" \
+            --cache-root "$RUNNER_TEMP/aas-cache" \
+            > "$RUNNER_TEMP/aas-preview.json"
+
+          python3 scripts/approve_aas.py \
+            "$RUNNER_TEMP/aas-preview.json" \
+            "$RUNNER_TEMP/aas-approve.txt"
+
+          APPROVAL_DIGEST="$(cat "$RUNNER_TEMP/aas-approve.txt")"
+
+          npm exec --yes --ignore-scripts --package=agentic-awesome-skills@16.4.0 -- \
+            aas mcp configure \
+            --host codex \
+            --scope user \
+            --config "$RUNNER_TEMP/codex-home/config.toml" \
+            --cache-root "$RUNNER_TEMP/aas-cache" \
+            --approve "$APPROVAL_DIGEST"
+
+          echo "===== Codex MCP config ====="
+          cat "$RUNNER_TEMP/codex-home/config.toml"
+
+      - name: Write agent brief
+        shell: bash
+        env:
+          APP_REQUEST: ${{ inputs.app_request }}
+          APP_NAME: ${{ inputs.app_name }}
+          PACKAGE_NAME: ${{ inputs.package_name }}
+        run: |
+          python3 scripts/write_agent_brief.py
+
+      - name: Run Codex + AAS
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          codex-home: ${{ runner.temp }}/codex-home
+          permission-profile: ":workspace"
+          prompt-file: factory-output/AGENT_BRIEF.md
+          output-file: factory-output/CODEX_FINAL.md
+          effort: high
+          codex-args: '["--search"]'
+
+      - name: Validate generated project
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f aas-stack.json || { echo "aas-stack.json was not produced"; exit 1; }
+          test -f settings.gradle.kts -o -f settings.gradle || { echo "Android project root not found"; exit 1; }
+          test -d app || { echo "app module not found"; exit 1; }
+
+      - name: Build Android APK and AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -x ./gradlew ]; then
+            ./gradlew --no-daemon assembleDebug bundleRelease
+          else
+            echo "gradlew missing; installing Gradle fallback"
+            gradle --no-daemon assembleDebug bundleRelease
+          fi
+
+      - name: Collect outputs
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p factory-output/artifacts
+          find app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) -exec cp {} factory-output/artifacts/ \; 2>/dev/null || true
+          cp aas-stack.json factory-output/ 2>/dev/null || true
+          cp aas-selection-evidence.json factory-output/ 2>/dev/null || true
+          cp aas-plan.json factory-output/ 2>/dev/null || true
+
+      - name: Upload factory result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecrin-app-factory-v4-result
+          path: factory-output/
+          if-no-files-found: error
