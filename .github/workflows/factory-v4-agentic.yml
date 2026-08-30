@@ -1,4 +1,4 @@
-name: Ecrin App Factory V4 Agentic FIX2
+name: Ecrin App Factory V4 Agentic FIX3
 
 on:
   workflow_dispatch:
@@ -110,7 +110,6 @@ jobs:
           prompt-file: factory-output/AGENT_BRIEF.md
           output-file: factory-output/CODEX_FINAL.md
           effort: high
-          codex-args: '["--search"]'
 
       - name: Validate generated project
         shell: bash
