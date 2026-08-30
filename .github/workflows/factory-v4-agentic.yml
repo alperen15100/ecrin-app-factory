@@ -1,4 +1,4 @@
-name: Ecrin App Factory V4 Agentic FIX
+name: Ecrin App Factory V4 Agentic FIX2
 
 on:
   workflow_dispatch:
@@ -23,6 +23,7 @@ jobs:
   agentic-build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
     steps:
       - name: Checkout factory
         uses: actions/checkout@v5
@@ -44,28 +45,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # AAS requires its runtime/cache directories to be private real dirs (0700)
-          # owned by the current user. GitHub RUNNER_TEMP itself is not guaranteed 0700.
           PRIVATE_ROOT="$HOME/.ecrin-aas"
           rm -rf "$PRIVATE_ROOT"
           install -d -m 700 "$PRIVATE_ROOT"
           install -d -m 700 "$PRIVATE_ROOT/cache"
           install -d -m 700 "$PRIVATE_ROOT/codex-home"
-          touch "$PRIVATE_ROOT/codex-home/config.toml"
-          chmod 600 "$PRIVATE_ROOT/codex-home/config.toml"
           mkdir -p factory-output
+
+          # IMPORTANT: do NOT pre-create config.toml.
+          # If it already exists, AAS requires a backup directory before applying.
+          CONFIG_PATH="$PRIVATE_ROOT/codex-home/config.toml"
+          rm -f "$CONFIG_PATH"
+
           echo "AAS_CACHE=$PRIVATE_ROOT/cache" >> "$GITHUB_ENV"
           echo "CODEX_HOME_DIR=$PRIVATE_ROOT/codex-home" >> "$GITHUB_ENV"
+          echo "CODEX_CONFIG=$CONFIG_PATH" >> "$GITHUB_ENV"
 
       - name: Configure AAS Core for Codex
         shell: bash
         run: |
           set -euo pipefail
+
           npm exec --yes --ignore-scripts --package=agentic-awesome-skills@16.4.0 -- \
             aas mcp configure \
             --host codex \
             --scope user \
-            --config "$CODEX_HOME_DIR/config.toml" \
+            --config "$CODEX_CONFIG" \
             --cache-root "$AAS_CACHE" \
             > "$HOME/.ecrin-aas/aas-preview.json"
 
@@ -79,12 +84,13 @@ jobs:
             aas mcp configure \
             --host codex \
             --scope user \
-            --config "$CODEX_HOME_DIR/config.toml" \
+            --config "$CODEX_CONFIG" \
             --cache-root "$AAS_CACHE" \
             --approve "$APPROVAL_DIGEST"
 
-          test -s "$CODEX_HOME_DIR/config.toml"
-          echo "AAS Core configured."
+          test -s "$CODEX_CONFIG"
+          chmod 600 "$CODEX_CONFIG"
+          echo "AAS Core configured successfully."
 
       - name: Write agent brief
         shell: bash

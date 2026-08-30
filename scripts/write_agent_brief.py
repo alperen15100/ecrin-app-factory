@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
-req=os.environ["APP_REQUEST"].strip()
-name=os.environ["APP_NAME"].strip()
-pkg=os.environ["PACKAGE_NAME"].strip()
+
+req = os.environ["APP_REQUEST"].strip()
+name = os.environ["APP_NAME"].strip()
+pkg = os.environ["PACKAGE_NAME"].strip()
+
 Path("factory-output").mkdir(exist_ok=True)
 Path("factory-output/AGENT_BRIEF.md").write_text(f"""# Ecrin App Factory — Agentic Build
 
